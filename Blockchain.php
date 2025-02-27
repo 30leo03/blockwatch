@@ -1,5 +1,6 @@
 <?php
 require_once 'Block.php';
+require_once 'BlockchainDB.php';
 
 /**
  * Klasse zur Verwaltung der Blockchain
@@ -8,13 +9,32 @@ class Blockchain {
   /** @var Block[] */
   public array $chain;
   public int $difficulty;
+  private BlockchainDB $db;
 
   /**
    * Konstruktor: Initialisiert die Blockchain mit dem Genesis-Block.
    */
   public function __construct() {
-    $this->chain = [$this->createGenesisBlock()];
-    $this->difficulty = 4; // Legt den Mining-Schwierigkeitsgrad fest
+    $this->db = new BlockchainDB();
+    $storedBlocks = $this->db->getAllBlocks();
+
+    if (empty($storedBlocks)) {
+      // Erstelle Genesis-Block, wenn noch keine vorhanden sind
+      $genesis = $this->createGenesisBlock();
+      $this->chain = [$genesis];
+      $this->db->saveBlock($genesis);
+    } else {
+      // Rekonstruiere die Blockchain aus der DB
+      $this->chain = [];
+      foreach ($storedBlocks as $row) {
+        $block = new Block($row['idx'], json_decode($row['data'], true), $row['previous_hash']);
+        $block->timestamp = (int)$row['timestamp'];
+        $block->nonce = (int)$row['nonce'];
+        $block->hash = $row['hash'];
+        $this->chain[] = $block;
+      }
+    }
+    $this->difficulty = 4;
   }
 
   /**
@@ -44,6 +64,7 @@ class Blockchain {
     $newBlock->previousHash = $this->getLatestBlock()->hash;
     $newBlock->mineBlock($this->difficulty);
     $this->chain[] = $newBlock;
+    $this->db->saveBlock($newBlock);
   }
 
   /**
@@ -56,11 +77,9 @@ class Blockchain {
       $currentBlock = $this->chain[$i];
       $previousBlock = $this->chain[$i - 1];
 
-      // Prüfe, ob der aktuelle Hash noch korrekt ist
       if ($currentBlock->hash !== $currentBlock->calculateHash()) {
         return false;
       }
-      // Prüfe, ob der Verweis auf den vorherigen Block stimmt
       if ($currentBlock->previousHash !== $previousBlock->hash) {
         return false;
       }
@@ -69,3 +88,4 @@ class Blockchain {
   }
 }
 ?>
+
